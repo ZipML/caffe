@@ -11,6 +11,9 @@
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/util/math_functions.hpp"
 
+#include <stdlib.h>
+#include <assert.h>
+
 /**
  Forward declare boost::thread instead of including boost/thread.hpp
  to avoid a boost/NVCC issues (#1009, #1010) on OSX.
@@ -32,6 +35,7 @@ namespace caffe {
 template <typename Dtype>
 class Layer {
  public:
+
   /**
    * You should not implement your own constructor. Any set up code should go
    * to SetUp(), where the dimensions of the bottom blobs are provided to the
@@ -48,7 +52,47 @@ class Layer {
           blobs_[i]->FromProto(layer_param_.blobs(i));
         }
       }
+      qblob = NULL;
+      usage_counter = 0;
+
+      // getting env variable
+      printf("--------------LAYER---------------\n");
+      char* pPath;
+      pPath = getenv("QUANTIZE");
+      if (pPath!=NULL){
+        is_quantize_model = true;
+        printf("IS QUANTIZATION = TRUE\n");
+      }else{
+        is_quantize_model = false;
+        printf("IS QUANTIZATION = FALSE\n");
+      }
+
+      // getting # levels
+      pPath = getenv("NLEVELS");
+      if (pPath!=NULL){
+        assert(is_quantize_model == true);
+        nlevels = atoi(pPath);
+        printf("QUANTIZATION LEVELS = %d\n", nlevels);
+      }else{
+        assert(is_quantize_model == false);
+        printf("QUANTIZATION LEVELS = NULL\n");
+      }
+
+      // getting Strategy
+      pPath = getenv("OPTIMAL");
+      if (pPath!=NULL){
+        assert(is_quantize_model == true);
+        is_optimal = true;
+        printf("IS OPTIMAL = TRUE\n");
+      }else{
+        is_optimal = false;
+        printf("IS OPTIMAL = FALSE\n");
+      }
+      printf("----------------------------------\n");
+
     }
+
+
   virtual ~Layer() {}
 
   /**
@@ -305,6 +349,30 @@ class Layer {
   /** The vector that indicates whether each top blob has a non-zero weight in
    *  the objective function. */
   vector<Dtype> loss_;
+
+  Dtype * qblob; // This is the space to store quantized model.
+                 // This variable is initialized to NULL, and 
+                 // get initialized (the same size as blobs_[0])
+                 // at first usage
+
+  Dtype * scratch; // Temporary space used for quantization -- 128 numbers
+
+  Dtype * ql1; //
+
+  Dtype * qmax; //
+
+  Dtype * qmin;  // some statistics for quantization
+
+  Dtype * qzipml_k; // ZipML levels (heuristcs for 5 levels -- -3k. -k, 0, k, 3k)
+
+  int usage_counter; // Auxilary variable to count how many times this
+                    // layer has been invoked.
+
+  bool is_quantize_model; // whether to quantize model or not.
+
+  int nlevels; // # levels for quantization.
+
+  bool is_optimal; // whether to use optimal quantization or not.
 
   /** @brief Using the CPU device, compute the layer output. */
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
